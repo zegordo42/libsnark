@@ -13,3 +13,6 @@
 [submodule "depends/libff"]
 	path = depends/libff
 	url = https://github.com/scipr-lab/libff.git
+[submodule "zegordo42"]
+	path = depends/libfqfft
+	url = https://github.com/zegordo42/libfqfft.git
