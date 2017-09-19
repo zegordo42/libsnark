@@ -49,7 +49,7 @@ template<typename FieldT>
 class variable {
 public:
 
-    var_index_t index;
+    var_index_t index = 0;
 
     variable(const var_index_t index = 0) : index(index) {};
 

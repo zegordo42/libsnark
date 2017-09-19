@@ -79,9 +79,7 @@ public:
     knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > C_query;
     libff::G1_vector<ppT> H_query;
     libff::G1_vector<ppT> K_query;
-
-    r1cs_ppzksnark_constraint_system<ppT> constraint_system;
-
+	
     r1cs_ppzksnark_proving_key() {};
     r1cs_ppzksnark_proving_key<ppT>& operator=(const r1cs_ppzksnark_proving_key<ppT> &other) = default;
     r1cs_ppzksnark_proving_key(const r1cs_ppzksnark_proving_key<ppT> &other) = default;
@@ -90,14 +88,12 @@ public:
                                knowledge_commitment_vector<libff::G2<ppT>, libff::G1<ppT> > &&B_query,
                                knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > &&C_query,
                                libff::G1_vector<ppT> &&H_query,
-                               libff::G1_vector<ppT> &&K_query,
-                               r1cs_ppzksnark_constraint_system<ppT> &&constraint_system) :
+                               libff::G1_vector<ppT> &&K_query) :
         A_query(std::move(A_query)),
         B_query(std::move(B_query)),
         C_query(std::move(C_query)),
         H_query(std::move(H_query)),
-        K_query(std::move(K_query)),
-        constraint_system(std::move(constraint_system))
+        K_query(std::move(K_query))        
     {};
 
     size_t G1_size() const
@@ -374,6 +370,19 @@ public:
  */
 template<typename ppT>
 r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constraint_system<ppT> &cs);
+
+template<typename ppT>
+r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(
+	const r1cs_ppzksnark_constraint_system<ppT> &cs,
+	const Fr<ppT>& t,
+	const Fr<ppT>& alphaA,
+	const Fr<ppT>& alphaB,
+	const Fr<ppT>& alphaC,
+	const Fr<ppT>& rA,
+	const Fr<ppT>& rB,
+	const Fr<ppT>& beta,
+	const Fr<ppT>& gamma
+);
 
 /**
  * A prover algorithm for the R1CS ppzkSNARK.

@@ -40,8 +40,7 @@ bool r1cs_ppzksnark_proving_key<ppT>::operator==(const r1cs_ppzksnark_proving_ke
             this->B_query == other.B_query &&
             this->C_query == other.C_query &&
             this->H_query == other.H_query &&
-            this->K_query == other.K_query &&
-            this->constraint_system == other.constraint_system);
+            this->K_query == other.K_query);
 }
 
 template<typename ppT>
@@ -52,7 +51,6 @@ std::ostream& operator<<(std::ostream &out, const r1cs_ppzksnark_proving_key<ppT
     out << pk.C_query;
     out << pk.H_query;
     out << pk.K_query;
-    out << pk.constraint_system;
 
     return out;
 }
@@ -65,7 +63,6 @@ std::istream& operator>>(std::istream &in, r1cs_ppzksnark_proving_key<ppT> &pk)
     in >> pk.C_query;
     in >> pk.H_query;
     in >> pk.K_query;
-    in >> pk.constraint_system;
 
     return in;
 }
@@ -242,14 +239,37 @@ r1cs_ppzksnark_verification_key<ppT> r1cs_ppzksnark_verification_key<ppT>::dummy
 template <typename ppT>
 r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constraint_system<ppT> &cs)
 {
+    /* draw random element at which the QAP is evaluated */
+    const  Fr<ppT> t = Fr<ppT>::random_element();
+
+    const  Fr<ppT> alphaA = Fr<ppT>::random_element(),
+        alphaB = Fr<ppT>::random_element(),
+        alphaC = Fr<ppT>::random_element(),
+        rA = Fr<ppT>::random_element(),
+        rB = Fr<ppT>::random_element(),
+        beta = Fr<ppT>::random_element(),
+        gamma = Fr<ppT>::random_element();
+
+    return r1cs_ppzksnark_generator<ppT>(cs, t, alphaA, alphaB, alphaC, rA, rB, beta, gamma);
+}
+
+template <typename ppT>
+r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(
+    const r1cs_ppzksnark_constraint_system<ppT> &cs,
+    const Fr<ppT>& t,
+    const Fr<ppT>& alphaA,
+    const Fr<ppT>& alphaB,
+    const Fr<ppT>& alphaC,
+    const Fr<ppT>& rA,
+    const Fr<ppT>& rB,
+    const Fr<ppT>& beta,
+    const Fr<ppT>& gamma)
+{
     libff::enter_block("Call to r1cs_ppzksnark_generator");
 
     /* make the B_query "lighter" if possible */
     r1cs_ppzksnark_constraint_system<ppT> cs_copy(cs);
     cs_copy.swap_AB_if_beneficial();
-
-    /* draw random element at which the QAP is evaluated */
-    const  libff::Fr<ppT> t = libff::Fr<ppT>::random_element();
 
     qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(cs_copy, t);
 
@@ -293,15 +313,8 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
     At.emplace_back(qap_inst.Zt);
     Bt.emplace_back(qap_inst.Zt);
     Ct.emplace_back(qap_inst.Zt);
-
-    const  libff::Fr<ppT> alphaA = libff::Fr<ppT>::random_element(),
-        alphaB = libff::Fr<ppT>::random_element(),
-        alphaC = libff::Fr<ppT>::random_element(),
-        rA = libff::Fr<ppT>::random_element(),
-        rB = libff::Fr<ppT>::random_element(),
-        beta = libff::Fr<ppT>::random_element(),
-        gamma = libff::Fr<ppT>::random_element();
-    const libff::Fr<ppT>      rC = rA * rB;
+	 
+    const libff::Fr<ppT> rC = rA * rB;
 
     // consrtuct the same-coefficient-check query (must happen before zeroing out the prefix of At)
     libff::Fr_vector<ppT> Kt;
@@ -329,8 +342,8 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
 
     size_t g1_window = libff::get_exp_window_size<libff::G1<ppT> >(g1_exp_count);
     size_t g2_window = libff::get_exp_window_size<libff::G2<ppT> >(g2_exp_count);
-    libff::print_indent(); printf("* G1 window: %zu\n", g1_window);
-    libff::print_indent(); printf("* G2 window: %zu\n", g2_window);
+    // libff::print_indent(); printf("* G1 window: %zu\n", g1_window);
+    // libff::print_indent(); printf("* G2 window: %zu\n", g2_window);
 
 #ifdef MULTICORE
     const size_t chunks = omp_get_max_threads(); // to override, set OMP_NUM_THREADS env var or call omp_set_num_threads()
@@ -417,8 +430,7 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
                                                                          std::move(B_query),
                                                                          std::move(C_query),
                                                                          std::move(H_query),
-                                                                         std::move(K_query),
-                                                                         std::move(cs_copy));
+                                                                         std::move(K_query));
 
     pk.print_size();
     vk.print_size();
@@ -429,12 +441,13 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
 template <typename ppT>
 r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key<ppT> &pk,
                                                 const r1cs_ppzksnark_primary_input<ppT> &primary_input,
-                                                const r1cs_ppzksnark_auxiliary_input<ppT> &auxiliary_input)
+                                                const r1cs_ppzksnark_auxiliary_input<ppT> &auxiliary_input,
+												const r1cs_ppzksnark_constraint_system<ppT> &constraint_system)
 {
     libff::enter_block("Call to r1cs_ppzksnark_prover");
 
 #ifdef DEBUG
-    assert(pk.constraint_system.is_satisfied(primary_input, auxiliary_input));
+    assert(constraint_system.constraint_system.is_satisfied(primary_input, auxiliary_input));
 #endif
 
     const libff::Fr<ppT> d1 = libff::Fr<ppT>::random_element(),
@@ -442,12 +455,12 @@ r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key
         d3 = libff::Fr<ppT>::random_element();
 
     libff::enter_block("Compute the polynomial H");
-    const qap_witness<libff::Fr<ppT> > qap_wit = r1cs_to_qap_witness_map(pk.constraint_system, primary_input, auxiliary_input, d1, d2, d3);
+    const qap_witness<Fr<ppT> > qap_wit = r1cs_to_qap_witness_map(constraint_system, primary_input, auxiliary_input, d1, d2, d3);
     libff::leave_block("Compute the polynomial H");
 
 #ifdef DEBUG
     const libff::Fr<ppT> t = libff::Fr<ppT>::random_element();
-    qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(pk.constraint_system, t);
+    qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(constraint_system, t);
     assert(qap_inst.is_satisfied(qap_wit));
 #endif
 
@@ -537,7 +550,7 @@ r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key
     libff::leave_block("Call to r1cs_ppzksnark_prover");
 
     r1cs_ppzksnark_proof<ppT> proof = r1cs_ppzksnark_proof<ppT>(std::move(g_A), std::move(g_B), std::move(g_C), std::move(g_H), std::move(g_K));
-    proof.print_size();
+    // proof.print_size();
 
     return proof;
 }
@@ -569,45 +582,26 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
                                             const r1cs_ppzksnark_primary_input<ppT> &primary_input,
                                             const r1cs_ppzksnark_proof<ppT> &proof)
 {
-    libff::enter_block("Call to r1cs_ppzksnark_online_verifier_weak_IC");
     assert(pvk.encoded_IC_query.domain_size() >= primary_input.size());
 
-    libff::enter_block("Compute input-dependent part of A");
     const accumulation_vector<libff::G1<ppT> > accumulated_IC = pvk.encoded_IC_query.template accumulate_chunk<libff::Fr<ppT> >(primary_input.begin(), primary_input.end(), 0);
     const libff::G1<ppT> &acc = accumulated_IC.first;
-    libff::leave_block("Compute input-dependent part of A");
 
-    bool result = true;
-
-    libff::enter_block("Check if the proof is well-formed");
     if (!proof.is_well_formed())
-    {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("At least one of the proof elements does not lie on the curve.\n");
-        }
-        result = false;
+    {        
+        return false;
     }
-    libff::leave_block("Check if the proof is well-formed");
-
-    libff::enter_block("Online pairing computations");
-    libff::enter_block("Check knowledge commitment for A is valid");
-    libff::G1_precomp<ppT> proof_g_A_g_precomp      = ppT::precompute_G1(proof.g_A.g);
+    
+    libff::G1_precomp<ppT> proof_g_A_g_precomp = ppT::precompute_G1(proof.g_A.g);
     libff::G1_precomp<ppT> proof_g_A_h_precomp = ppT::precompute_G1(proof.g_A.h);
     libff::Fqk<ppT> kc_A_1 = ppT::miller_loop(proof_g_A_g_precomp,      pvk.vk_alphaA_g2_precomp);
     libff::Fqk<ppT> kc_A_2 = ppT::miller_loop(proof_g_A_h_precomp, pvk.pp_G2_one_precomp);
     libff::GT<ppT> kc_A = ppT::final_exponentiation(kc_A_1 * kc_A_2.unitary_inverse());
     if (kc_A != libff::GT<ppT>::one())
-    {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("Knowledge commitment for A query incorrect.\n");
-        }
-        result = false;
+    {       
+        return false;
     }
-    libff::leave_block("Check knowledge commitment for A is valid");
-
-    libff::enter_block("Check knowledge commitment for B is valid");
+    
     libff::G2_precomp<ppT> proof_g_B_g_precomp      = ppT::precompute_G2(proof.g_B.g);
     libff::G1_precomp<ppT> proof_g_B_h_precomp = ppT::precompute_G1(proof.g_B.h);
     libff::Fqk<ppT> kc_B_1 = ppT::miller_loop(pvk.vk_alphaB_g1_precomp, proof_g_B_g_precomp);
@@ -615,15 +609,9 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     libff::GT<ppT> kc_B = ppT::final_exponentiation(kc_B_1 * kc_B_2.unitary_inverse());
     if (kc_B != libff::GT<ppT>::one())
     {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("Knowledge commitment for B query incorrect.\n");
-        }
-        result = false;
+        return false;
     }
-    libff::leave_block("Check knowledge commitment for B is valid");
-
-    libff::enter_block("Check knowledge commitment for C is valid");
+  
     libff::G1_precomp<ppT> proof_g_C_g_precomp      = ppT::precompute_G1(proof.g_C.g);
     libff::G1_precomp<ppT> proof_g_C_h_precomp = ppT::precompute_G1(proof.g_C.h);
     libff::Fqk<ppT> kc_C_1 = ppT::miller_loop(proof_g_C_g_precomp,      pvk.vk_alphaC_g2_precomp);
@@ -631,15 +619,9 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     libff::GT<ppT> kc_C = ppT::final_exponentiation(kc_C_1 * kc_C_2.unitary_inverse());
     if (kc_C != libff::GT<ppT>::one())
     {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("Knowledge commitment for C query incorrect.\n");
-        }
-        result = false;
+        return false;
     }
-    libff::leave_block("Check knowledge commitment for C is valid");
-
-    libff::enter_block("Check QAP divisibility");
+    
     // check that g^((A+acc)*B)=g^(H*\Prod(t-\sigma)+C)
     // equivalently, via pairings, that e(g^(A+acc), g^B) = e(g^H, g^Z) + e(g^C, g^1)
     libff::G1_precomp<ppT> proof_g_A_g_acc_precomp = ppT::precompute_G1(proof.g_A.g + acc);
@@ -649,15 +631,9 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     libff::GT<ppT> QAP = ppT::final_exponentiation(QAP_1 * QAP_23.unitary_inverse());
     if (QAP != libff::GT<ppT>::one())
     {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("QAP divisibility check failed.\n");
-        }
-        result = false;
+        return false;
     }
-    libff::leave_block("Check QAP divisibility");
 
-    libff::enter_block("Check same coefficients were used");
     libff::G1_precomp<ppT> proof_g_K_precomp = ppT::precompute_G1(proof.g_K);
     libff::G1_precomp<ppT> proof_g_A_g_acc_C_precomp = ppT::precompute_G1((proof.g_A.g + acc) + proof.g_C.g);
     libff::Fqk<ppT> K_1 = ppT::miller_loop(proof_g_K_precomp, pvk.vk_gamma_g2_precomp);
@@ -665,17 +641,10 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     libff::GT<ppT> K = ppT::final_exponentiation(K_1 * K_23.unitary_inverse());
     if (K != libff::GT<ppT>::one())
     {
-        if (!libff::inhibit_profiling_info)
-        {
-            libff::print_indent(); printf("Same-coefficient check failed.\n");
-        }
-        result = false;
+        return false;
     }
-    libff::leave_block("Check same coefficients were used");
-    libff::leave_block("Online pairing computations");
-    libff::leave_block("Call to r1cs_ppzksnark_online_verifier_weak_IC");
 
-    return result;
+    return true;
 }
 
 template<typename ppT>
